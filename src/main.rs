@@ -2,7 +2,7 @@ use std::env;
 use std::sync::{Mutex, RwLock};
 use actix_web::{web, get, post, App, HttpServer, Result, HttpResponse};
 use actix_web::web::Data;
-use log::debug;
+use log::{debug, info};
 use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
 
@@ -101,7 +101,7 @@ impl DBAdapter {
 async fn new_ticket(
     event: web::Json<Event>, client: Data<DBAdapter>,
 ) -> Result<HttpResponse> {
-    debug!("{:?}", event);
+    info!("{:?}", event);
     client.insert(event.clone());
     Ok(HttpResponse::Ok().finish())
 }
@@ -128,7 +128,7 @@ async fn get_nft(
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     // --- setup logger ---
-    env::set_var("RUST_LOG", "debug");
+    env::set_var("RUST_LOG", "info");
     env_logger::init();
     debug!("debug for env_logger.");
 
