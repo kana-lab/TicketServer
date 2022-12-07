@@ -1,6 +1,8 @@
 use std::env;
 use std::sync::{Mutex, RwLock};
-use actix_web::{web, get, post, App, HttpServer, Result, HttpResponse};
+use actix_cors::Cors;
+use actix_web::{web, get, post, App, HttpServer, Result, HttpResponse, http};
+use actix_web::middleware::Logger;
 use actix_web::web::Data;
 use log::{debug, info};
 use rusqlite::{Connection, params};
@@ -136,7 +138,10 @@ async fn main() -> std::io::Result<()> {
     let client = Data::new(DBAdapter::new());
 
     HttpServer::new(move || {
+        let cors = Cors::permissive();
         App::new()
+            .wrap(cors)
+            .wrap(Logger::default())
             .app_data(client.clone())
             .service(new_ticket)
             .service(get_events)
