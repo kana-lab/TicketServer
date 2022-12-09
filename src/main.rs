@@ -1,7 +1,7 @@
 use std::env;
 use std::sync::{Mutex, RwLock};
 use actix_cors::Cors;
-use actix_web::{web, get, post, App, HttpServer, Result, HttpResponse, http};
+use actix_web::{web, get, post, App, HttpServer, Result, HttpResponse};
 use actix_web::middleware::Logger;
 use actix_web::web::Data;
 use log::{debug, info};
@@ -11,19 +11,10 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 struct Event {
-    id: Option<usize>,
-    amount: usize,
-    price: f64,
     event_name: String,
     image: String,
     explanation: String,
-}
-
-#[derive(Clone, Serialize, Debug)]
-struct NFT {
-    name: String,
-    description: String,
-    image: String,
+    address: String,
 }
 
 struct DBAdapter {
@@ -41,15 +32,13 @@ impl DBAdapter {
         let con = Connection::open(Self::DB_PATH).unwrap();
 
         let events = {
-            let mut stmt = con.prepare("select * from events").unwrap();
+            let mut stmt = con.prepare("select * from stockInfo").unwrap();
             stmt.query_map(params![], |row| {
                 Ok(Event {
-                    id: row.get(0).unwrap(),
-                    amount: row.get(1).unwrap(),
-                    price: row.get(2).unwrap(),
-                    event_name: row.get(3).unwrap(),
-                    image: row.get(4).unwrap(),
-                    explanation: row.get(5).unwrap(),
+                    event_name: row.get(0).unwrap(),
+                    image: row.get(1).unwrap(),
+                    explanation: row.get(2).unwrap(),
+                    address: row.get(3).unwrap(),
                 })
             }).unwrap().map(|e| e.unwrap()).collect()
         };
@@ -69,33 +58,17 @@ impl DBAdapter {
         self.events_json.read().unwrap().clone()
     }
 
-    fn insert(&self, mut e: Event) {
-        {
-            let mut events = self.events.write().unwrap();
-            e.id = Some(events.len());
-            events.push(e.clone());
-        }
+    fn insert(&self, e: Event) {
+        self.events.write().unwrap().push(e.clone());
 
         *self.events_json.write().unwrap() = serde_json::to_string::<Vec<Event>>(
             self.events.read().unwrap().as_ref()
         ).unwrap();
 
         self.con.lock().unwrap().execute(
-            "insert into events values (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![e.id, e.amount, e.price, e.event_name, e.image, e.explanation],
+            "insert into stockInfo values (?1, ?2, ?3, ?4)",
+            params![e.event_name, e.image, e.explanation, e.address],
         ).unwrap();
-    }
-
-    fn get_nft(&self, event_id: usize, ticket_num: usize) -> Option<NFT> {
-        let events = self.events.read().unwrap();
-        if events.len() <= event_id { return None; }
-        let Event { amount, event_name, image, explanation, .. } = events[event_id].clone();
-        if ticket_num >= amount { return None; }
-        Some(NFT {
-            name: format!("{} #{}", event_name, ticket_num),
-            description: explanation,
-            image,
-        })
     }
 }
 
@@ -108,23 +81,12 @@ async fn new_ticket(
     Ok(HttpResponse::Ok().finish())
 }
 
-#[get("/events")]
+#[get("/list")]
 async fn get_events(
     client: Data<DBAdapter>
 ) -> HttpResponse {
     let json = client.get_events();
     HttpResponse::Ok().content_type("application/json").body(json)
-}
-
-#[get("/nft/{event_id}/{ticket_num}.json")]
-async fn get_nft(
-    client: Data<DBAdapter>, path: web::Path<(usize, usize)>,
-) -> HttpResponse {
-    let (event_id, ticket_num) = path.into_inner();
-    match client.get_nft(event_id, ticket_num) {
-        Some(nft) => HttpResponse::Ok().json(nft),
-        None => HttpResponse::NotFound().finish()
-    }
 }
 
 #[actix_web::main]
@@ -145,7 +107,6 @@ async fn main() -> std::io::Result<()> {
             .app_data(client.clone())
             .service(new_ticket)
             .service(get_events)
-            .service(get_nft)
     })
         .bind(("127.0.0.1", 8080))?
         .run()
